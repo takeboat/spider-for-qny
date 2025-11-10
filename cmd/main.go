@@ -2,12 +2,18 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"spider"
 	"strings"
 	"sync"
+	"sync/atomic"
+
+	"github.com/gocarina/gocsv"
 )
 
 var res = &Result{}
+
+var DeviceTotal atomic.Int32
 
 func main() {
 	spider.MustInitDB()
@@ -25,8 +31,7 @@ func main() {
 		wg.Add(1)
 		go worker(deviceChan, &wg)
 	}
-
-	for _, station := range stations[:10] {
+	for _, station := range stations {
 		devices, err := GetDevicesByStationID(station.StaionId)
 		if err != nil {
 			fmt.Println("Error getting devices:", err)
@@ -34,21 +39,21 @@ func main() {
 			continue
 		}
 		m[station] = devices
-		for _, device := range devices {
-			deviceChan <- &device
+		for i := range devices {
+			deviceChan <- &devices[i]
 		}
 	}
 	close(deviceChan)
 	wg.Wait()
 	// Print results
 	fmt.Println("done")
-	for station, devices := range m {
-		for _, device := range devices {
-			device.Print()
-		}
-		station.Print()
+	fmt.Println("设备总数:", DeviceTotal.Load())
+	res.WriteErrorToFile()
+	// export to csv
+	if err := exportToCSV(m); err != nil {
+		fmt.Println("Error exporting to CSV:", err)
 	}
-	fmt.Println(res)
+	fmt.Println("Exported to CSV Success")
 }
 
 type ChargerStation struct {
@@ -79,6 +84,35 @@ func (r *Result) WriteDeviceGetError(stationID uint, err error) {
 func (r *Result) WriteDeviceNetWorkError(deviceId uint, err error) {
 	r.DeviceNetWorkError += fmt.Sprintf("设备ID: %d, 获取设备信息错误: %v\n", deviceId, err)
 	r.DeviceNetWorkErrorTotal++
+}
+func (*Result) WriteErrorToFile() error {
+	if res.DeviceGetErrorTotal > 0 {
+		deviceGetErrorFile, err := os.Create("device_get_errors.txt")
+		if err != nil {
+			return fmt.Errorf("创建设备获取错误文件失败: %v", err)
+		}
+		defer deviceGetErrorFile.Close()
+
+		_, err = deviceGetErrorFile.WriteString(res.DeviceGetError)
+		if err != nil {
+			return fmt.Errorf("写入设备获取错误文件失败: %v", err)
+		}
+		fmt.Printf("设备获取错误已写入 device_get_errors.txt (共%d条)\n", res.DeviceGetErrorTotal)
+	}
+	if res.DeviceNetWorkErrorTotal > 0 {
+		deviceNetWorkErrorFile, err := os.Create("device_network_errors.txt")
+		if err != nil {
+			return fmt.Errorf("创建设备网络错误文件失败: %v", err)
+		}
+		defer deviceNetWorkErrorFile.Close()
+
+		_, err = deviceNetWorkErrorFile.WriteString(res.DeviceNetWorkError)
+		if err != nil {
+			return fmt.Errorf("写入设备网络错误文件失败: %v", err)
+		}
+		fmt.Printf("设备网络错误已写入 device_network_errors.txt (共%d条)\n", res.DeviceNetWorkErrorTotal)
+	}
+	return nil
 }
 func GetChargerStations() ([]ChargerStation, error) {
 	var stations []ChargerStation
@@ -138,5 +172,48 @@ func worker(devices chan *Device, wg *sync.WaitGroup) {
 			continue
 		}
 		device.Print()
+		DeviceTotal.Add(1)
 	}
+}
+
+type ExportData struct {
+	StationID   uint   `csv:"station_id"`
+	StationName string `csv:"station_name"`
+	Province    string `csv:"province"`
+	City        string `csv:"city"`
+	County      string `csv:"county"`
+	StationAddr string `csv:"station_addr"`
+	DeviceID    uint   `csv:"device_id"`
+	DeviceVpnIP string `csv:"device_vpn_ip"`
+	DeviceMac   string `csv:"device_mac"`
+	DeviceICCID string `csv:"device_iccid"`
+}
+
+func exportToCSV(data map[ChargerStation][]Device) error {
+	var exportData []ExportData
+	// 转换数据格式
+	for station, devices := range data {
+		for _, device := range devices {
+			exportData = append(exportData, ExportData{
+				StationID:   station.StaionId,
+				StationName: station.StationName,
+				Province:    station.Province,
+				City:        station.City,
+				County:      station.County,
+				StationAddr: station.StationAddr,
+				DeviceID:    device.DeviceID,
+				DeviceVpnIP: spider.ReverseLittleBinaryIp(device.DeviceVpnIP),
+				DeviceMac:   device.DeviceMac,
+				DeviceICCID: device.DeviceICCID,
+			})
+		}
+	}
+	// 创建CSV文件
+	file, err := os.Create("output_ICCID.csv")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	// 写入CSV数据
+	return gocsv.MarshalFile(&exportData, file)
 }

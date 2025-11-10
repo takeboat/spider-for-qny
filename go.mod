@@ -3,6 +3,7 @@ module spider
 go 1.25.1
 
 require (
+	github.com/gocarina/gocsv v0.0.0-20240520201108-78e41c74b4b1
 	golang.org/x/crypto v0.43.0
 	gorm.io/driver/mysql v1.5.1
 	gorm.io/gorm v1.25.1

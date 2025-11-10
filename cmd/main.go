@@ -80,6 +80,7 @@ type Device struct {
 	DeviceStationSn int    `json:"device_station_sn"`
 }
 type Result struct {
+	mu sync.Mutex
 	DeviceGetError          string
 	DeviceGetErrorTotal     int
 	DeviceNetWorkError      string
@@ -87,10 +88,14 @@ type Result struct {
 }
 
 func (r *Result) WriteDeviceGetError(stationID uint, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.DeviceGetError += fmt.Sprintf("设备ID: %d, 获取设备信息错误: %v\n", stationID, err)
 	r.DeviceGetErrorTotal++
 }
 func (r *Result) WriteDeviceNetWorkError(deviceId uint, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.DeviceNetWorkError += fmt.Sprintf("设备ID: %d, 获取设备信息错误: %v\n", deviceId, err)
 	r.DeviceNetWorkErrorTotal++
 }
@@ -186,15 +191,16 @@ func worker(devices chan *Device, wg *sync.WaitGroup) {
 }
 
 type ExportData struct {
-	StationName     string `csv:"station_name"`
-	Province        string `csv:"province"`
-	City            string `csv:"city"`
-	County          string `csv:"county"`
-	StationAddr     string `csv:"station_addr"`
-	StationContacts string `csv:"station_contacts"`
-	DeviceMac       string `csv:"device_mac"`
-	DeviceICCID     string `csv:"device_iccid"`
-	DeviceStationSn string `csv:"device_station_sn"`
+	StationName     string `csv:"场站名称"`
+	Province        string `csv:"省份"`
+	City            string `csv:"市区"`
+	County          string `csv:"区/县"`
+	StationAddr     string `csv:"详细地址"`
+	StationContacts string `csv:"负责人"`
+	DeviceMac       string `csv:"设备MAC地址"`
+	DeviceICCID     string `csv:"设备ICCID"`
+	DeviceStationSn string `csv:"设备场站序号"`
+	DeviceVpnIP     string `csv:"vpnIP"`
 }
 
 func exportToCSV(data map[ChargerStation][]Device) error {
@@ -215,6 +221,7 @@ func exportToCSV(data map[ChargerStation][]Device) error {
 				DeviceMac:       device.DeviceMac,
 				DeviceICCID:     device.DeviceICCID,
 				DeviceStationSn: fmt.Sprintf("%d号桩", device.DeviceStationSn),
+				DeviceVpnIP:     spider.ReverseLittleBinaryIp(device.DeviceVpnIP),
 			})
 		}
 	}

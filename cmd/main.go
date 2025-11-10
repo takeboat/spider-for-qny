@@ -33,7 +33,7 @@ func main() {
 		wg.Add(1)
 		go worker(deviceChan, &wg)
 	}
-	for _, station := range stations[:10] {
+	for _, station := range stations {
 		if station.StaionId == 0 || station.StaionId == 1766 ||
 			station.StaionId == 1674 || station.StaionId == 4933 {
 			continue
@@ -192,8 +192,6 @@ type ExportData struct {
 	County          string `csv:"county"`
 	StationAddr     string `csv:"station_addr"`
 	StationContacts string `csv:"station_contacts"`
-	DeviceID        uint   `csv:"device_id"`
-	DeviceVpnIP     string `csv:"device_vpn_ip"`
 	DeviceMac       string `csv:"device_mac"`
 	DeviceICCID     string `csv:"device_iccid"`
 	DeviceStationSn string `csv:"device_station_sn"`
@@ -204,6 +202,9 @@ func exportToCSV(data map[ChargerStation][]Device) error {
 	// 转换数据格式
 	for station, devices := range data {
 		for _, device := range devices {
+			if device.DeviceVpnIP == 0 {
+				continue
+			}
 			exportData = append(exportData, ExportData{
 				StationName:     station.StationName,
 				Province:        station.Province,
@@ -211,8 +212,6 @@ func exportToCSV(data map[ChargerStation][]Device) error {
 				County:          station.County,
 				StationAddr:     station.StationAddr,
 				StationContacts: station.StationContacts,
-				DeviceID:        device.DeviceID,
-				DeviceVpnIP:     spider.ReverseLittleBinaryIp(device.DeviceVpnIP),
 				DeviceMac:       device.DeviceMac,
 				DeviceICCID:     device.DeviceICCID,
 				DeviceStationSn: fmt.Sprintf("%d号桩", device.DeviceStationSn),

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/gocarina/gocsv"
 )
@@ -18,6 +19,7 @@ var DeviceTotal atomic.Int32
 func main() {
 	spider.MustInitDB()
 	fmt.Println("Database initialized")
+	t := time.Now()
 	m := make(map[ChargerStation][]Device)
 	stations, err := GetChargerStations()
 	if err != nil {
@@ -26,12 +28,16 @@ func main() {
 	}
 	var wg sync.WaitGroup
 	deviceChan := make(chan *Device, 500)
-	workerCount := 10
+	workerCount := 15
 	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
 		go worker(deviceChan, &wg)
 	}
-	for _, station := range stations {
+	for _, station := range stations[:10] {
+		if station.StaionId == 0 || station.StaionId == 1766 ||
+			station.StaionId == 1674 || station.StaionId == 4933 {
+			continue
+		}
 		devices, err := GetDevicesByStationID(station.StaionId)
 		if err != nil {
 			fmt.Println("Error getting devices:", err)
@@ -54,21 +60,24 @@ func main() {
 		fmt.Println("Error exporting to CSV:", err)
 	}
 	fmt.Println("Exported to CSV Success")
+	fmt.Println("总共耗时:", time.Since(t))
 }
 
 type ChargerStation struct {
-	StaionId    uint   `json:"station_id" gorm:"column:station_id"`
-	StationName string `json:"station_name"`
-	Province    string `json:"province"`
-	City        string `json:"city"`
-	County      string `json:"county"`
-	StationAddr string `json:"station_addr" gorm:"column:station_addr"`
+	StaionId        uint   `json:"station_id" gorm:"column:station_id"`
+	StationName     string `json:"station_name"`
+	Province        string `json:"province"`
+	City            string `json:"city"`
+	County          string `json:"county"`
+	StationAddr     string `json:"station_addr" gorm:"column:station_addr"`
+	StationContacts string `json:"station_contacts" gorm:"column:station_contacts"`
 }
 type Device struct {
-	DeviceID    uint   `json:"device_id"`
-	DeviceVpnIP uint32 `json:"device_vpn_ip"`
-	DeviceMac   string `json:"device_mac"`
-	DeviceICCID string `json:"device_iccid"`
+	DeviceID        uint   `json:"device_id"`
+	DeviceVpnIP     uint32 `json:"device_vpn_ip"`
+	DeviceMac       string `json:"device_mac"`
+	DeviceICCID     string `json:"device_iccid"`
+	DeviceStationSn int    `json:"device_station_sn"`
 }
 type Result struct {
 	DeviceGetError          string
@@ -116,7 +125,7 @@ func (*Result) WriteErrorToFile() error {
 }
 func GetChargerStations() ([]ChargerStation, error) {
 	var stations []ChargerStation
-	res := spider.GetDB().Raw("select ss.station_id, ss.station_name, ss.province, ss.city ,ss.county, ss.station_addr from sys_station ss where ss.is_deleted = 1").Scan(&stations)
+	res := spider.GetDB().Raw("select ss.station_id, ss.station_name, ss.province, ss.city ,ss.county, ss.station_addr, ss.station_contacts from sys_station ss where ss.is_deleted = 1").Scan(&stations)
 	if res.Error != nil {
 		return nil, res.Error
 	}
@@ -124,13 +133,13 @@ func GetChargerStations() ([]ChargerStation, error) {
 }
 
 func (cs *ChargerStation) Print() {
-	fmt.Printf("充电站ID: %d, 充电站名称: %s, 省份: %s, 城市: %s, 区县: %s, 地址: %s\n", cs.StaionId, cs.StationName, cs.Province, cs.City, cs.County, cs.StationAddr)
+	fmt.Printf("充电站ID: %d, 充电站名称: %s, 省份: %s, 城市: %s, 区县: %s, 地址: %s 负责人: %s\n", cs.StaionId, cs.StationName, cs.Province, cs.City, cs.County, cs.StationAddr, cs.StationContacts)
 }
 
 func GetDevicesByStationID(stationID uint) ([]Device, error) {
 	fmt.Println("Getting devices for station ID:", stationID)
 	var devices []Device
-	res := spider.GetDB().Raw("select cd.device_id, cd.device_vpn_ip from charger_device cd where cd.station_id = ? and cd.device_tcp_status = 1", stationID).Scan(&devices)
+	res := spider.GetDB().Raw("select cd.device_id, cd.device_vpn_ip, cd.device_station_sn from charger_device cd where cd.station_id = ? and cd.device_tcp_status = 1", stationID).Scan(&devices)
 	if res.Error != nil {
 		return nil, res.Error
 	}
@@ -177,16 +186,17 @@ func worker(devices chan *Device, wg *sync.WaitGroup) {
 }
 
 type ExportData struct {
-	StationID   uint   `csv:"station_id"`
-	StationName string `csv:"station_name"`
-	Province    string `csv:"province"`
-	City        string `csv:"city"`
-	County      string `csv:"county"`
-	StationAddr string `csv:"station_addr"`
-	DeviceID    uint   `csv:"device_id"`
-	DeviceVpnIP string `csv:"device_vpn_ip"`
-	DeviceMac   string `csv:"device_mac"`
-	DeviceICCID string `csv:"device_iccid"`
+	StationName     string `csv:"station_name"`
+	Province        string `csv:"province"`
+	City            string `csv:"city"`
+	County          string `csv:"county"`
+	StationAddr     string `csv:"station_addr"`
+	StationContacts string `csv:"station_contacts"`
+	DeviceID        uint   `csv:"device_id"`
+	DeviceVpnIP     string `csv:"device_vpn_ip"`
+	DeviceMac       string `csv:"device_mac"`
+	DeviceICCID     string `csv:"device_iccid"`
+	DeviceStationSn string `csv:"device_station_sn"`
 }
 
 func exportToCSV(data map[ChargerStation][]Device) error {
@@ -195,21 +205,23 @@ func exportToCSV(data map[ChargerStation][]Device) error {
 	for station, devices := range data {
 		for _, device := range devices {
 			exportData = append(exportData, ExportData{
-				StationID:   station.StaionId,
-				StationName: station.StationName,
-				Province:    station.Province,
-				City:        station.City,
-				County:      station.County,
-				StationAddr: station.StationAddr,
-				DeviceID:    device.DeviceID,
-				DeviceVpnIP: spider.ReverseLittleBinaryIp(device.DeviceVpnIP),
-				DeviceMac:   device.DeviceMac,
-				DeviceICCID: device.DeviceICCID,
+				StationName:     station.StationName,
+				Province:        station.Province,
+				City:            station.City,
+				County:          station.County,
+				StationAddr:     station.StationAddr,
+				StationContacts: station.StationContacts,
+				DeviceID:        device.DeviceID,
+				DeviceVpnIP:     spider.ReverseLittleBinaryIp(device.DeviceVpnIP),
+				DeviceMac:       device.DeviceMac,
+				DeviceICCID:     device.DeviceICCID,
+				DeviceStationSn: fmt.Sprintf("%d号桩", device.DeviceStationSn),
 			})
 		}
 	}
 	// 创建CSV文件
-	file, err := os.Create("output_ICCID.csv")
+	filename := fmt.Sprintf("output_%s.csv", time.Now().Format("20060102_15-04-05"))
+	file, err := os.Create(filename)
 	if err != nil {
 		return err
 	}

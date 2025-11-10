@@ -4,29 +4,52 @@ import (
 	"fmt"
 	"spider"
 	"strings"
+	"sync"
 )
+
+var res = &Result{}
 
 func main() {
 	spider.MustInitDB()
 	fmt.Println("Database initialized")
 	m := make(map[ChargerStation][]Device)
-
 	stations, err := GetChargerStations()
 	if err != nil {
 		fmt.Println("Error getting charger stations:", err)
 		return
 	}
-	for _, station := range stations {
-		fmt.Println("Charger station:")
-		station.Print()
+	var wg sync.WaitGroup
+	deviceChan := make(chan *Device, 500)
+	workerCount := 10
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go worker(deviceChan, &wg)
+	}
+
+	for _, station := range stations[:10] {
 		devices, err := GetDevicesByStationID(station.StaionId)
 		if err != nil {
 			fmt.Println("Error getting devices:", err)
+			res.WriteDeviceGetError(station.StaionId, err)
 			continue
 		}
 		m[station] = devices
+		for _, device := range devices {
+			deviceChan <- &device
+		}
 	}
-	
+	close(deviceChan)
+	wg.Wait()
+	// Print results
+	fmt.Println("获取设备信息成功")
+	for station, devices := range m {
+		fmt.Println("获取设备信息成功")
+		for _, device := range devices {
+			device.Print()
+		}
+		station.Print()
+	}
+	fmt.Println(res)
 }
 
 type ChargerStation struct {
@@ -38,12 +61,26 @@ type ChargerStation struct {
 	StationAddr string `json:"station_addr" gorm:"column:station_addr"`
 }
 type Device struct {
-	DeviceID    int    `json:"device_id"`
+	DeviceID    uint   `json:"device_id"`
 	DeviceVpnIP uint32 `json:"device_vpn_ip"`
 	DeviceMac   string `json:"device_mac"`
 	DeviceICCID string `json:"device_iccid"`
 }
+type Result struct {
+	DeviceGetError          string
+	DeviceGetErrorTotal     int
+	DeviceNetWorkError      string
+	DeviceNetWorkErrorTotal int
+}
 
+func (r *Result) WriteDeviceGetError(stationID uint, err error) {
+	r.DeviceGetError += fmt.Sprintf("设备ID: %d, 获取设备信息错误: %v\n", stationID, err)
+	r.DeviceGetErrorTotal++
+}
+func (r *Result) WriteDeviceNetWorkError(deviceId uint, err error) {
+	r.DeviceNetWorkError += fmt.Sprintf("设备ID: %d, 获取设备信息错误: %v\n", deviceId, err)
+	r.DeviceNetWorkErrorTotal++
+}
 func GetChargerStations() ([]ChargerStation, error) {
 	var stations []ChargerStation
 	res := spider.GetDB().Raw("select ss.station_id, ss.station_name, ss.province, ss.city ,ss.county, ss.station_addr from sys_station ss where ss.is_deleted = 1").Scan(&stations)
@@ -87,4 +124,17 @@ func (d *Device) GetDeviceNetWorkDetails() error {
 
 func (d *Device) Print() {
 	fmt.Printf("设备ID: %d, 设备VPN IP: %v 设备ICCID: %s 设备MAC: %s \n", d.DeviceID, spider.ReverseLittleBinaryIp(d.DeviceVpnIP), d.DeviceICCID, d.DeviceMac)
+}
+
+func worker(devices chan *Device, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for device := range devices {
+		err := device.GetDeviceNetWorkDetails()
+		if err != nil {
+			fmt.Println("Error getting device network details:", err)
+			res.WriteDeviceNetWorkError(device.DeviceID, err)
+			continue
+		}
+		device.Print()
+	}
 }

@@ -80,7 +80,7 @@ type Device struct {
 	DeviceStationSn int    `json:"device_station_sn"`
 }
 type Result struct {
-	mu sync.Mutex
+	mu                      sync.Mutex
 	DeviceGetError          string
 	DeviceGetErrorTotal     int
 	DeviceNetWorkError      string

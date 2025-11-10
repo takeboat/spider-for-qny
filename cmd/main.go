@@ -18,6 +18,7 @@ var DeviceTotal atomic.Int32
 
 func main() {
 	spider.MustInitDB()
+	// must init database connection
 	fmt.Println("Database initialized")
 	t := time.Now()
 	m := make(map[ChargerStation][]Device)

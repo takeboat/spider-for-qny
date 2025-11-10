@@ -41,9 +41,8 @@ func main() {
 	close(deviceChan)
 	wg.Wait()
 	// Print results
-	fmt.Println("获取设备信息成功")
+	fmt.Println("done")
 	for station, devices := range m {
-		fmt.Println("获取设备信息成功")
 		for _, device := range devices {
 			device.Print()
 		}
@@ -106,6 +105,9 @@ func GetDevicesByStationID(stationID uint) ([]Device, error) {
 
 func (d *Device) GetDeviceNetWorkDetails() error {
 	vpnIP := spider.ReverseLittleBinaryIp(d.DeviceVpnIP)
+	if !spider.IsValidIp(vpnIP) {
+		return fmt.Errorf("Invalid IP: %s Device_id: %d", vpnIP, d.DeviceID)
+	}
 	host := fmt.Sprintf("%s:22", vpnIP)
 	client, err := spider.InitSSH(host)
 	if err != nil {

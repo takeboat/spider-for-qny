@@ -41,7 +41,6 @@ func IsValidIp(vpnIP string) bool {
 	if ip == nil {
 		return false
 	}
-
 	// 拒绝IPv6（如果只需要IPv4）
 	if ip.To4() == nil {
 		return false
@@ -61,5 +60,22 @@ func IsValidIp(vpnIP string) bool {
 		return false
 	default:
 		return true // 接受公网IP
+	}
+}
+
+func ProductStr(productID uint32) string {
+	switch productID {
+	case 1:
+		return "160kw/1-4"
+	case 2:
+		return "320kw"
+	case 3:
+		return "120kw"
+	case 4:
+		return "400kw"
+	case 5:
+		return "160kw"
+	default:
+		return "未知"
 	}
 }

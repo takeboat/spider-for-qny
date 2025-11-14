@@ -79,6 +79,7 @@ type Device struct {
 	DeviceMac       string `json:"device_mac"`
 	DeviceICCID     string `json:"device_iccid"`
 	DeviceStationSn int    `json:"device_station_sn"`
+	ProductID       uint32 `json:"product_id"`
 }
 type Result struct {
 	mu                      sync.Mutex
@@ -145,7 +146,7 @@ func (cs *ChargerStation) Print() {
 func GetDevicesByStationID(stationID uint) ([]Device, error) {
 	fmt.Println("Getting devices for station ID:", stationID)
 	var devices []Device
-	res := spider.GetDB().Raw("select cd.device_id, cd.device_vpn_ip, cd.device_station_sn from charger_device cd where cd.station_id = ? and cd.device_tcp_status = 1", stationID).Scan(&devices)
+	res := spider.GetDB().Raw("select cd.device_id, cd.device_vpn_ip, cd.device_station_sn, cd.product_id from charger_device cd where cd.station_id = ? and cd.device_tcp_status = 1", stationID).Scan(&devices)
 	if res.Error != nil {
 		return nil, res.Error
 	}
@@ -202,6 +203,7 @@ type ExportData struct {
 	DeviceICCID     string `csv:"设备ICCID"`
 	DeviceStationSn string `csv:"设备场站序号"`
 	DeviceVpnIP     string `csv:"vpnIP"`
+	Product         string `csv:"产品型号"`
 }
 
 func exportToCSV(data map[ChargerStation][]Device) error {
@@ -223,6 +225,7 @@ func exportToCSV(data map[ChargerStation][]Device) error {
 				DeviceICCID:     device.DeviceICCID,
 				DeviceStationSn: fmt.Sprintf("%d号桩", device.DeviceStationSn),
 				DeviceVpnIP:     spider.ReverseLittleBinaryIp(device.DeviceVpnIP),
+				Product:         spider.ProductStr(device.ProductID),
 			})
 		}
 	}

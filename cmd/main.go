@@ -16,10 +16,24 @@ var res = &Result{}
 
 var DeviceTotal atomic.Int32
 
+// 全局跳板机实例
+var jumpHost *spider.JumpHost
+
 func main() {
 	spider.MustInitDB()
 	// must init database connection
 	fmt.Println("Database initialized")
+
+	// 初始化跳板机连接 - 使用您提供的用户名和密码连接VPN服务器
+	var err error
+	jumpHost, err = spider.NewJumpHost("121.43.115.61:22", "fengmengfan", "f929433643") // VPN服务器地址、用户名和密码
+	if err != nil {
+		fmt.Printf("Failed to connect to jump host: %v\n", err)
+		return
+	}
+	defer jumpHost.Close()
+	fmt.Println("Jump host connected")
+
 	t := time.Now()
 	m := make(map[ChargerStation][]Device)
 	stations, err := GetChargerStations()
@@ -159,10 +173,14 @@ func (d *Device) GetDeviceNetWorkDetails() error {
 		return fmt.Errorf("Invalid IP: %s Device_id: %d", vpnIP, d.DeviceID)
 	}
 	host := fmt.Sprintf("%s:22", vpnIP)
-	client, err := spider.InitSSH(host)
+
+	// 通过全局跳板机实例连接到目标主机，使用预定义的密码（123456或ft0323）
+	client, err := jumpHost.ConnectToTarget(host)
 	if err != nil {
 		return err
 	}
+	defer client.Close()
+
 	cmd := "cat /tmp/NET_details"
 	output, err := spider.RunSSHCommand(client, cmd)
 	if err != nil {

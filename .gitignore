@@ -1,2 +1,3 @@
 spider
 *.csv
+.env

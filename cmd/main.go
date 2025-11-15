@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gocarina/gocsv"
+	"github.com/joho/godotenv"
 )
 
 var res = &Result{}
@@ -23,10 +24,13 @@ func main() {
 	spider.MustInitDB()
 	// must init database connection
 	fmt.Println("Database initialized")
-
 	// 初始化跳板机连接 - 使用您提供的用户名和密码连接VPN服务器
 	var err error
-	jumpHost, err = spider.NewJumpHost("121.43.115.61:22", "fengmengfan", "f929433643") // VPN服务器地址、用户名和密码
+	err = godotenv.Load()
+	if err != nil {
+		panic(err)
+	}
+	jumpHost, err = spider.NewJumpHost(os.Getenv("host"), os.Getenv("user"), os.Getenv("password")) // VPN服务器地址、用户名和密码
 	if err != nil {
 		fmt.Printf("Failed to connect to jump host: %v\n", err)
 		return
@@ -48,7 +52,7 @@ func main() {
 		wg.Add(1)
 		go worker(deviceChan, &wg)
 	}
-	for _, station := range stations {
+	for _, station := range stations[:10] {
 		if station.StaionId == 0 || station.StaionId == 1766 ||
 			station.StaionId == 1674 || station.StaionId == 4933 {
 			continue
